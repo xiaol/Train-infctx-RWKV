@@ -35,12 +35,12 @@ cd RWKV-v4neo-lora/
 
 #长上下文训练
 RWKV_VOCAB=WORLD python train.py \
-  --load_model /users/aigclab/copilot/Train-infctx-RWKV/models/RWKV-4-World-7B-v1-20230626-ctx4096.pth  \
-  --proj_dir out7b-world-paper-reviewer-v1-rwkv-full --wandb paper-reviewer-rwkv-16k\
-  --data_file /users/aigclab/copilot/Train-infctx-RWKV/data/paper_reviewer_v1_text_document \
+  --load_model /users/aigclab/copilot/Train-infctx-RWKV/models/RWKV-4-World-CHNtuned-1.5B-v1-20230620-ctx4096.pth  \
+  --proj_dir out7b-world-role-play-v1-rwkv-full --wandb role-play-1.5B-rwkv-16k\
+  --data_file /users/aigclab/copilot/Train-infctx-RWKV/data/role_play_v1_st_text_document \
   --data_type binidx \
   --vocab_size 65536 --epoch_steps 500 --epoch_count 3 \
-  --epoch_begin 0 --epoch_save 1 --micro_bsz 1 --n_layer 32 --n_embd 4096 \
+  --epoch_begin 0 --epoch_save 1 --micro_bsz 1 --n_layer 24 --n_embd 2048 \
   --pre_ffn 0 --head_qk 0 --lr_init 1e-4 --lr_final 1e-5 --warmup_steps 2000 \
   --beta1 0.9 --beta2 0.999 --adam_eps 1e-8 --accelerator gpu --devices 4 \
   --precision bf16 --grad_cp 1 --accumulate_grad_batches 1 --strategy deepspeed_stage_1 \

@@ -1,0 +1,1 @@
+python preprocess_data.py --input ./data/role_play_v1_st.jsonl --output-prefix ./data/role_play_v1_st --vocab rwkv_vocab_v20230424_new.txt --dataset-impl mmap --tokenizer-type RWKVTokenizer --worker 12
