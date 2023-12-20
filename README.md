@@ -1,4 +1,3 @@
-![image](https://github.com/xiaol/Train-infctx-RWKV/assets/1669515/4c192ca5-f1da-4dc2-975a-489e85117fde)
 
 # Project Overview
 
