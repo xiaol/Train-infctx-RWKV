@@ -1,85 +1,85 @@
----
-license: Apache 2.0
----
+![image](https://github.com/xiaol/Train-infctx-RWKV/assets/1669515/4c192ca5-f1da-4dc2-975a-489e85117fde)
 
-# 项目简介
+# Project Overview
 
-本项目是基于[RWKV-LM-LoRA](https://github.com/Blealtan/RWKV-LM-LoRA/)项目修改而来，用于ChatGal数据训练。由于本项目加入了一些社区内的最新解决方案，能够更好地实现训练RWKV的长上下文能力，因此也可供其它项目试用。
+This project is a modified version based on the [RWKV-LM-LoRA](https://github.com/Blealtan/RWKV-LM-LoRA/) project and is used for training on ChatGal data. Since this project incorporates some of the latest community solutions, it can better achieve the long-context capability of training RWKV, making it suitable for other projects as well.
 
-主要特点
+Main Features:
 
-- Ctrl+C退出时自动保存最新模型参数
-- 规避cuda kernel造成的显存瓶颈，支持24G显存显卡全量训练RWKV 7B模型、LoRA训练RWKV 7B模型。
-- 实验性的无限长上下文训练
+- Automatic saving of the latest model parameters when exiting with Ctrl+C.
+- Avoiding VRAM bottlenecks caused by CUDA kernels, supporting full training of RWKV 7B models on 24GB VRAM GPUs, and LoRA training of RWKV 7B models.
+- Experimental training with infinite context.
 
-本项目主体代码与[RWKV-LM-LoRA](https://github.com/Blealtan/RWKV-LM-LoRA/)相同，可以参考其训练配置。**提醒一下：训练LoRA模型需要先和主模型合并才能使用！（使用merge_lora.py或者merge_lora_plus.py合并）。**
+The main code of this project is the same as [RWKV-LM-LoRA](https://github.com/Blealtan/RWKV-LM-LoRA/), and you can refer to its training configuration. **A reminder: To train LoRA models, you need to merge them with the main model first (using merge_lora.py or merge_lora_plus.py).**
 
-由于项目屎山堆积比较重，未来代码可能会整理重构。这里仅简单介绍一下长上下文的解决方案。
-RWKV模型训练过程中训练文本长度ctx_len会对显存占用有重要影响，除了会增大激活值占用的存储，也会增大wkv kernel运算过程中的临时存储开销，导致24G显存下7B模型常常无法训练4096及以上文本（即使已经开启了层间梯度检查点（Gradient Checkpointing） `--grad_cp 1`）。
+Due to the accumulation of a large amount of code in this project, the code may be organized and refactored in the future. Here, I will briefly introduce the solution for handling long contexts.
 
-## 方案1：简单降低wkv显存开销
+During the training process of the RWKV model, the training text length `ctx_len` has a significant impact on VRAM usage. It not only increases the storage occupied by activation values but also increases the temporary storage overhead during the WKV kernel computation, making it difficult to train texts of length 4096 or above for a 7B model on a 24GB VRAM GPU (even when layer-wise gradient checkpointing `--grad_cp 1` is enabled).
 
-本项目使用了修改后的wkv kernel，支持状态输入。因此一种解决方案是在执行wkv运算时，把输入序列分片成较小序列长度，依次进行wkv运算，并保持状态的正常传递。
+## Solution 1: Reducing VRAM Overhead of WKV
 
-实现上可以调整`--ctx_parts`参数，从1逐渐增大。例如当`--ctx_len 4096 --ctx_parts 4`时，模型实际使用的是1024长度的wkv kernel，避免因wkv运算造成OOM。
+This project uses a modified WKV kernel that supports state input. One solution is to divide the input sequence into smaller sequence lengths during WKV computation, perform WKV computations sequentially, and maintain the normal propagation of states.
 
-这种解决方案可以轻微降低显存开销，扩展最大可训练长度，但是无法解决因激活值和最后一层计算logits产生的显存开销，因此提升有限。但是本方案的优点是兼容deepspeed stage 2及offload，相对于原版RWKV-LM可以无副作用地降低显存。
+You can adjust the `--ctx_parts` parameter, starting from 1 and gradually increasing it. For example, when `--ctx_len 4096 --ctx_parts 4`, the model will actually use a WKV kernel with a length of 1024, avoiding OOM errors caused by WKV computations.
 
-## 方案2：无限长上下文训练（状态梯度检查点）
+This solution can slightly reduce VRAM overhead and extend the maximum trainable length, but it cannot solve the VRAM overhead caused by activation values and the computation of logits in the final layer. Therefore, the improvement is limited. However, the advantage of this solution is that it is compatible with DeepSpeed Stage 2 and offload, and it can reduce VRAM without side effects compared to the original RWKV-LM.
 
-[infctx](https://github.com/Blealtan/RWKV-LM-LoRA/tree/dev-infctx)是RWKV社区内Blealtan等人实现的一种RWKV训练程序，可以实现充分长序列的训练。其原理是利用RWKV作为RNN的特点，在时间方向上进行梯度检查点，通过两次前向传播的代价换取显存降低，支持长序列训练。
+## Solution 2: Training with Infinite Context (State Gradient Checkpointing)
 
-开启需要给出参数`--state_cp 1`，为了让模型逐渐适应长上下文，建议开启`--initial_ctx_len 4096 --ctx_warmup_steps 200`，通过200步逐渐将训练长度从4096涨到ctx_len。
+[infctx](https://github.com/Blealtan/RWKV-LM-LoRA/tree/dev-infctx) is an RWKV training program implemented by Blealtan and others within the RWKV community. It allows training with significantly longer sequences. The principle is to utilize the RNN-like characteristics of RWKV and perform gradient checkpointing in the time dimension, trading off VRAM for reduced memory consumption and supporting training with long sequences.
 
-在24G单卡上使用lora训练7B模型，最大验证过可以训练128K及以上文本长度（并且显存还有大量剩余）。
+To enable this feature, use the `--state_cp 1` parameter. To gradually adapt the model to long contexts, it is recommended to enable `--initial_ctx_len 4096 --ctx_warmup_steps 200`, gradually increasing the training length from 4096 to `ctx_len` over 200 steps.
 
-由于deepspeed框架的一些问题，导致这种方案仅适用于deepspeed stage 1。对于单张24G显存的显卡，该种方案只能LoRA微调7B模型。如果要全量微调7B模型，至少需要4x80G显卡。
+Using LoRA training with a single 24GB GPU, it is possible to train text lengths of 128K or above (with significant VRAM remaining).
 
+Due to some issues with the DeepSpeed framework, this solution is only applicable to DeepSpeed Stage 1. For a single 24GB VRAM GPU, this solution can only fine-tune the 7B model using LoRA. To fully fine-tune the 7B model, at least 4x80GB GPUs are required.
 
-# 杂项
+# Miscellaneous
 
-## 全参数微调步骤
+## Steps for Full Fine-tuning
 
-- 预处理：需要将处理前的neox风格jsonl文件放进`datasource`文件夹，命令参考`preprocess_data.sh`。目前已经处理了一版（去除R18内容）放进了`data`文件夹
-- 微调：命令参考`train.sh`，训练需要在`RWKV-v4neo-LoRA`文件夹下进行
-- 推理：用ChatRWKV，或者text-generation-webui载入模型。
+- Preprocessing: Place the preprocessed neox-style JSONL files in the `datasource` folder. Refer to the command in `preprocess_data.sh`. A preprocessed version (without R18 content) has already been provided in the `data` folder.
+- Fine-tuning: Refer to the command in `train.sh`. The training should be conducted within the `RWKV-v4neo-LoRA` folder.
+- Inference: Use ChatRWKV or the text-generation-webui to load the trained model.
 
-## 胡乱记录一下
+## Random Notes
 
-- 把模型放到`pretrained_models`文件夹下，或者自己参考`train.sh`里改改
-- `megatron`、`preprocess_data.py`来自 https://github.com/EleutherAI/gpt-neox
-- `preprocess_data.sh`运行命令来自 https://github.com/BlinkDL/RWKV-LM#training--fine-tuning ，部分修改
-- `RWKV-v4neo`来自 https://github.com/BlinkDL/RWKV-LM
-- 训练命令参考 https://www.bilibili.com/read/cv22445881 ，部分修改
-- 推理暂时采用`temp = 0.7, top_p = 1`
-- train.sh参数解释
-- load_model：指定预训练模型的路径，用作训练的初始模型。
-- wandb：设置 Weights & Biases（一个用于深度学习实验跟踪的平台）的项目名称。
-- data_file：指定训练数据文件的路径。
-- data_type：设置训练数据的类型。
-- vocab_size：设置词汇表大小。
-- ctx_len：设置上下文长度。
-- accumulate_grad_batches：设置梯度累积批次，用于梯度累积优化。
-- epoch_steps：设置每个epoch的训练步数。
-- epoch_count：设置训练的总epoch数。
-- epoch_save：设置每隔多少个epoch保存一次模型。
-- micro_bsz：设置微批次大小。
-- n_layer：设置模型的层数。
-- n_embd：设置模型的嵌入维度。
-- pre_ffn：设置前馈神经网络（FFN）的预处理（0表示不使用）。
-- head_qk：设置注意力头的查询和键（0表示不使用）。
-- lr_init：设置初始学习率。
-- lr_final：设置最终学习率。
-- warmup_steps：设置学习率预热步数。
-- beta1：设置 Adam 优化器的 beta1 参数。
-- beta2：设置 Adam 优化器的 beta2 参数。
-- adam_eps：设置 Adam 优化器的 epsilon 参数。
-- accelerator：设置加速器类型（例如 GPU）。
-- devices：设置使用的设备数量。
-- precision：设置计算精度（例如 bfloat16）。
-- strategy：设置训练策略（例如 deepspeed_stage_2_offload）。
-- grad_cp：层梯度检查点标志。
-- state_cp: 状态梯度检查点标志。开启后，将会大幅减少长上下文的显存占用。
-- initial_ctx_len: 初始训练上下文长度。配合ctx_warmup_steps使用
-- ctx_warmup_steps: 上下文warmup步数，训练过程中会逐渐从initial_ctx_len涨到ctx_len
-- ctx_parts: 上下文切片数量。训练过程中会使用ctx_len/ctx_parts长度的WKV算子。例如ctx_len=8192,ctx_parts=8，则会使用1024长度的WKV算子。WKV算子的长度越短，占用显存越小，但是可能需要更多的计算时间。
+- Put the model in the `pretrained_models` folder or modify it yourself according to `train.sh`.
+- `megatron` and `preprocess_data.py` are from https://github.com/EleutherAI/gpt-neox.
+- The command to run `preprocess_data.sh` is from https://github.com/BlinkDL/RWKV-LM#training--fine-tuning with some modifications.
+- `RWKV-v4neo` is from https://github.com/BlinkDL/RWKV-LM.
+- The training command reference is from https://www.bilibili.com/read/cv22445881 with some modifications.
+- Inference currently uses `temp = 0.7, top_p = 1`.
+- Explanation of parameters in `train.sh`:
+  - load_model: Specify the path of the pre-trained model to be used as the initial model for training.
+  - wandb: Set the project name for Weights & Biases, a platform for tracking deep learning experiments.
+  - data_file: Specify the path of the training data file.
+  - data_type: Set the type of training data.
+  - vocab_size: Set the size of the vocabulary.
+  - ctx_len: Set the length of the context.
+  - accumulate_grad_batches: Set the number of gradient accumulation batches for gradient accumulation optimization.
+  - epoch_steps: Set the number of training steps per epoch.
+  - epoch_count: Set the total number of training epochs.
+  - epoch_save: Set how often to save the model, in terms of epochs.
+  - micro_bsz: Set the size of the micro-batch.
+  - n_layer: Set the number of layers in the model.
+  - n_embd: Set the embedding dimension of the model.
+  - pre_ffn: Set the preprocessing of the feed-forward neural network (FFN) (0 means not using).
+  - head_qk: Set the query and key for attention heads (0 means not using).
+  - lr_init: Set the initial learning rate.
+  - lr_final: Set the final learning rate.
+  - warmup_steps: Set the number of warm-up steps for learning rate.
+  - beta1: Set the beta1 parameter of the Adam optimizer.
+  - beta2: Set the beta2 parameter of the Adam optimizer.
+  - adam_eps: Set the epsilon parameter of the Adam optimizer.
+  - accelerator: Set the accelerator type (e.g., GPU).
+  - devices: Set the number of devices to use.
+  - precision: Set the computation precision (e.g., bfloat16).
+  - strategy: Set the training strategy (e.g., deepspeed_stage_2_offload).
+  - grad_cp: Layer gradient checkpoint flag.
+  - state_cp: State gradient checkpoint flag. When enabled, it significantly reduces the VRAM usage for long contexts.
+  - initial_ctx_len: Initial training context length. Used in conjunction with ctx_warmup_steps.
+  - ctx_warmup_steps: Context warm-up steps. The context length gradually increases from initial_ctx_len to ctx_len during training.
+  - ctx_parts: Number of context slices. WKV operators of length ctx_len/ctx_parts will be used during training. For example, if ctx_len=8192 and ctx_parts=8, WKV operators of length 1024 will be used. Shorter WKV operators consume less VRAM but may require more computation time.
+
+ # More trainning details: https://wandb.ai/one-/projects
